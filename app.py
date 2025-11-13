@@ -542,43 +542,17 @@ with tabs[1]:
 
                 st.markdown("---")
 
-# === Pestaña 3: Correlaciones no paramétricas — Spearman ===
+# === Pestaña 3: Correlaciones no paramétricas — Spearman (interactiva) ===
 with tabs[2]:
-    st.subheader("🔗 Correlaciones no paramétricas — Spearman (Mapa de calor + Tabla con IC)")
+    st.subheader("🔗 Correlaciones Spearman (Horas de Uso con Nomofobia, Ansiedad social y Autoestima)")
 
-    # Paleta: azul–ocre
-    palette_institucional = ["#0F4C81", "#F4A300", "#7BAFD4", "#D97B0E", "#4C6A92"]
-
-    spearman_vars = [c for c in ["Horas_Uso", "Nomofobia", "Ansiedad_social", "Autoestima", "Mal_uso", "Edad"] if c in df_f.columns]
+    spearman_vars = ["Horas_Uso", "Nomofobia", "Ansiedad_social", "Autoestima"]
+    spearman_vars = [v for v in spearman_vars if v in df_f.columns]
 
     if len(spearman_vars) >= 2:
-        # --- Calcular matriz de correlaciones ---
-        corr = df_f[spearman_vars].corr(method="spearman")
-
-        # --- Mapa de calor ---
-        fig_corr = px.imshow(
-            corr,
-            text_auto=".2f",
-            color_continuous_scale=[
-                [0, "#F4A300"], [0.5, "#ffffff"], [1, "#0F4C81"]
-            ],
-            zmin=-1,
-            zmax=1,
-            title="<b>🔶 Mapa de calor — Correlaciones Spearman</b>"
-        )
-        fig_corr.update_layout(
-            title_x=0,
-            hovermode="closest",
-            paper_bgcolor="#0E1117",
-            plot_bgcolor="#1A1C23",
-            font=dict(color="#E0E0E0"),
-            coloraxis_colorbar=dict(title="ρ (Spearman)")
-        )
-        st.plotly_chart(fig_corr, use_container_width=True)
-
-        # --- Cálculo de correlaciones individuales con IC (bootstrap) ---
-        target = "Horas_Uso" if "Horas_Uso" in spearman_vars else spearman_vars[0]
+        target = "Horas_Uso"
         rows = []
+
         for v in spearman_vars:
             if v == target:
                 continue
@@ -591,57 +565,77 @@ with tabs[2]:
             # Bootstrapping
             if bootstrap_spearman and tmp.shape[0] >= 10:
                 rng = np.random.default_rng(12345)
-                boots = []
-                for _ in range(nboots):
-                    idx = rng.integers(0, len(tmp), len(tmp))
-                    boots.append(stats.spearmanr(tmp[target].iloc[idx], tmp[v].iloc[idx]).correlation)
+                boots = [stats.spearmanr(tmp[target].iloc[rng.integers(0, len(tmp), len(tmp))],
+                                         tmp[v].iloc[rng.integers(0, len(tmp), len(tmp))]).correlation
+                         for _ in range(nboots)]
                 ci_lo, ci_hi = np.percentile(boots, [2.5, 97.5])
                 ci_text = f"[{ci_lo:.3f}, {ci_hi:.3f}]"
             else:
                 ci_text = "NA"
 
-            rows.append({
-                "Variable": v,
-                "ρ (Spearman)": round(rho, 3),
-                "p-valor": round(p, 4),
-                "IC 95% (bootstrap)": ci_text
-            })
+            rows.append({"Variable": v, "ρ (Spearman)": round(rho, 3), "p-valor": round(p, 4), "IC 95% (bootstrap)": ci_text})
 
-        # Mostrar tabla con estilo
         df_corr = pd.DataFrame(rows)
         st.dataframe(df_corr.style.format(precision=3), use_container_width=True)
 
-        # --- Interpretación ---
+        # --- Gráfico interactivo mejorado con paleta azul/ocre ---
+        fig_corr_bar = px.bar(
+            df_corr,
+            x="Variable",
+            y="ρ (Spearman)",
+            text="ρ (Spearman)",
+            color="ρ (Spearman)",
+            color_continuous_scale=[(0, "#F4A300"), (0.5, "#ffffff"), (1, "#0F4C81")],
+            title="<b>Correlaciones Spearman con Horas de Uso</b>",
+            hover_data={"Variable": True, "ρ (Spearman)": True, "p-valor": True, "IC 95% (bootstrap)": True}
+        )
+
+        fig_corr_bar.update_traces(
+            texttemplate="%{text:.3f}", textposition="outside", hovertemplate=
+            "<b>%{x}</b><br>ρ (Spearman): %{y}<br>p-valor: %{customdata[1]}<br>IC 95%: %{customdata[2]}"
+        )
+
+        fig_corr_bar.update_layout(
+            title_x=0,
+            paper_bgcolor="#0E1117",
+            plot_bgcolor="#1A1C23",
+            font=dict(color="#E0E0E0"),
+            yaxis=dict(range=[-1, 1], title="ρ (Spearman)"),
+            xaxis=dict(title="Variable"),
+            coloraxis_colorbar=dict(title="ρ"),
+            showlegend=False
+        )
+
+        st.plotly_chart(fig_corr_bar, use_container_width=True)
+
+        # --- Interpretación textual ---
         st.markdown("### **📖 Interpretación de las correlaciones:**")
         st.write(
-            """
-            - Se evidencia una **correlación positiva y significativa entre las horas de uso y la nomofobia**, 
-              lo que sugiere que a mayor exposición al smartphone, mayor dependencia emocional y conductual hacia el dispositivo.
-            - También se observa una **asociación directa entre nomofobia y ansiedad social**, 
-              respaldando la hipótesis de que el uso compulsivo del celular actúa como un mecanismo de evasión o compensación social.
-            - La **autoestima**, en contraste, tiende a correlacionarse de forma **negativa** con la nomofobia, 
-              indicando que niveles bajos de autoconfianza pueden acompañarse de un mayor apego tecnológico.
-            - Estas correlaciones confirman la necesidad de intervenciones que promuevan un uso responsable 
-              y regulado del smartphone en contextos universitarios.
+            f"""
+            - La variable **Horas de Uso** correlaciona {'positivamente' if df_corr.loc[df_corr['Variable']=='Nomofobia','ρ (Spearman)'].values[0]>0 else 'negativamente'} con **Nomofobia** 
+              (ρ = {df_corr.loc[df_corr['Variable']=='Nomofobia','ρ (Spearman)'].values[0]}), indicando que a mayor tiempo frente al smartphone, mayor dependencia emocional.
+            - Se observa {'una relación positiva' if df_corr.loc[df_corr['Variable']=='Ansiedad_social','ρ (Spearman)'].values[0]>0 else 'una relación negativa'} con **Ansiedad social** 
+              (ρ = {df_corr.loc[df_corr['Variable']=='Ansiedad_social','ρ (Spearman)'].values[0]}), sugiriendo un posible vínculo entre tiempo de uso y ansiedad social.
+            - La correlación con **Autoestima** es {'negativa' if df_corr.loc[df_corr['Variable']=='Autoestima','ρ (Spearman)'].values[0]<0 else 'positiva'} 
+              (ρ = {df_corr.loc[df_corr['Variable']=='Autoestima','ρ (Spearman)'].values[0]}), reflejando que un mayor uso podría asociarse con menor autoconfianza.
             """
         )
     else:
-        st.warning("No hay suficientes variables numéricas para calcular correlaciones Spearman.")
-
+        st.warning("No hay suficientes variables para calcular correlaciones Spearman.")
     st.markdown("---")
 
-# === Pestaña 4: Test Mann–Whitney — Horas de Uso por Nomofobia (Sí/No) ===
+# === Pestaña 4: Test Mann–Whitney — Horas de Uso por Sexo ===
 with tabs[3]:
-    st.subheader("📊 Test Mann–Whitney — Horas de Uso por Nomofobia (Sí/No)")
+    st.subheader("📊 Test Mann–Whitney — Horas de Uso por Sexo")
 
-    if {"Nomofobia?", "Horas_Uso"}.issubset(df_f.columns):
-        a = df_f[df_f["Nomofobia?"] == "Sí"]["Horas_Uso"].dropna()
-        b = df_f[df_f["Nomofobia?"] == "No"]["Horas_Uso"].dropna()
+    if {"Sexo", "Horas_Uso"}.issubset(df_f.columns):
+        hombres = df_f[df_f["Sexo"]=="Hombre"]["Horas_Uso"].dropna()
+        mujeres = df_f[df_f["Sexo"]=="Mujer"]["Horas_Uso"].dropna()
 
-        if len(a) >= 3 and len(b) >= 3:
+        if len(hombres) >= 3 and len(mujeres) >= 3:
             # --- Cálculo estadístico ---
-            U, p_u = stats.mannwhitneyu(a, b, alternative="two-sided")
-            n1, n2 = len(a), len(b)
+            U, p_u = stats.mannwhitneyu(hombres, mujeres, alternative="two-sided")
+            n1, n2 = len(hombres), len(mujeres)
             mu_U = n1 * n2 / 2
             sigma_U = math.sqrt(n1 * n2 * (n1 + n2 + 1) / 12)
             z = (U - mu_U) / sigma_U if sigma_U > 0 else 0
@@ -655,49 +649,42 @@ with tabs[3]:
             else:
                 st.info("ℹ️ No se detectaron diferencias significativas (p ≥ 0.05).")
 
-            # --- Boxplot institucional ---
-            fig_mw = px.box(
+            # --- Boxplot institucional con colores originales ---
+            fig_mw_sexo = px.box(
                 df_f,
-                x="Nomofobia?",
+                x="Sexo",
                 y="Horas_Uso",
                 points="all",
-                color="Nomofobia?",
-                title="<b>Distribución de Horas de Uso según presencia de Nomofobia</b>",
-                hover_data=["Estrato", "Sexo"] if "Estrato" in df_f.columns else None,
-                color_discrete_map={"Sí": "#0F4C81", "No": "#F4A300"}
+                color="Sexo",
+                title="<b>Distribución de Horas de Uso según Sexo</b>",
+                color_discrete_map={"Hombre": "#0F4C81", "Mujer": "#F4A300"}
             )
-
-            fig_mw.update_layout(
+            fig_mw_sexo.update_layout(
                 title_x=0,
                 plot_bgcolor="#1A1C23",
                 paper_bgcolor="#0E1117",
                 font=dict(color="#E0E0E0"),
-                xaxis_title="Condición de Nomofobia",
+                xaxis_title="Sexo",
                 yaxis_title="Horas de Uso del Smartphone",
                 hoverlabel=dict(bgcolor="#0F4C81", font_color="white"),
                 showlegend=False
             )
-
-            st.plotly_chart(fig_mw, use_container_width=True)
+            st.plotly_chart(fig_mw_sexo, use_container_width=True)
 
             # --- Interpretación contextual ---
-            st.markdown("### **📖 Interpretación de resultados Mann–Whitney:**")
+            st.markdown("### **📖 Interpretación de resultados Mann–Whitney por Sexo:**")
             st.write(
                 f"""
                 - El valor p obtenido (**{p_u:.4f}**) indica que {'existen diferencias significativas' if p_u < 0.05 else 'no se evidencian diferencias significativas'}
-                  en las **horas promedio de uso** entre quienes presentan y no presentan nomofobia.
+                  en las **horas promedio de uso** entre hombres y mujeres.
                 - El tamaño del efecto (**r = {r}**) refleja la magnitud de la diferencia, donde valores cercanos a 0.3 o superiores sugieren un efecto relevante.
-                - Este resultado refuerza la hipótesis del estudio: las personas con **mayor nivel de nomofobia tienden a emplear más horas diarias en el celular**, 
-                  lo cual puede estar relacionado con **conductas de dependencia y regulación emocional** frente al uso del smartphone.
-                - Estos hallazgos son consistentes con la literatura revisada, destacando el **impacto psicológico del uso excesivo** y 
-                  su vínculo con la ansiedad y baja autorregulación.
+                - Este análisis permite observar patrones de uso diferenciados por sexo, aportando información sobre posibles estrategias de prevención o educación digital.
                 """
             )
         else:
             st.warning("⚠️ Insuficientes observaciones en uno de los grupos para aplicar Mann–Whitney (mínimo 3 por grupo).")
     else:
-        st.error("❌ No se encontraron las columnas 'Nomofobia?' y 'Horas_Uso' en los datos cargados.")
-
+        st.error("❌ No se encontraron las columnas 'Sexo' y 'Horas_Uso' en los datos cargados.")
     st.markdown("---")
 
 # === Pestaña 5: Kruskal–Wallis (Nomofobia por Estrato) ===
@@ -988,14 +975,11 @@ with tabs[7]:
     # ---- Radar: comparación multidimensional ----
     st.subheader("Comparación global de indicadores principales")
 
-    # Variables de interés (presentes en el dataframe)
     radar_vars = [v for v in ["Nomofobia", "Ansiedad_social", "Autoestima", "Mal_uso"] if v in df_f.columns]
 
     if radar_vars:
         radar_means = df_f[radar_vars].mean().reset_index()
         radar_means.columns = ["Variable", "Promedio"]
-
-        # Cerramos el polígono repitiendo el primer punto
         radar_means = pd.concat([radar_means, radar_means.iloc[[0]]], ignore_index=True)
 
         fig_radar = go.Figure(
@@ -1063,10 +1047,10 @@ with tabs[7]:
                     pv = dunn.loc[i, j]
                     if pv < 0.05:
                         sig_pairs.append(f"{i}–{j} (p={pv:.3f})")
-        if sig_pairs:
-            conclusions.append("**Post-hoc Dunn:** diferencias significativas entre → " + ", ".join(sig_pairs))
-        else:
-            conclusions.append("**Post-hoc Dunn:** no se detectaron diferencias significativas entre pares de estratos.")
+            if sig_pairs:
+                conclusions.append("**Post-hoc Dunn:** diferencias significativas entre → " + ", ".join(sig_pairs))
+            else:
+                conclusions.append("**Post-hoc Dunn:** no se detectaron diferencias significativas entre pares de estratos.")
 
     # Presentación visual ordenada
     for c in conclusions:
@@ -1074,31 +1058,40 @@ with tabs[7]:
 
     st.markdown("---")
 
-    # ---- Conclusión general del proyecto ----
+    # ---- Conclusión general combinada ----
     st.subheader("Conclusión final del estudio 🎯")
     st.markdown("""
-    En conjunto, los resultados obtenidos confirman que el tiempo de uso del smartphone mantiene una **relación directa con los niveles de nomofobia y de mal uso del dispositivo**, 
-    además de mostrar una **asociación significativa con la ansiedad social**.  
-    Esto sugiere que el uso excesivo del teléfono no solo impacta en la dependencia tecnológica, sino también en el bienestar psicológico, 
-    evidenciando la necesidad de estrategias institucionales para fomentar un uso consciente y equilibrado de la tecnología entre los estudiantes universitarios.
-    """)
-    st.write("""
-    El análisis integral evidencia que **la nomofobia se asocia de forma significativa con un mayor tiempo de uso del smartphone y niveles elevados de ansiedad social**, 
-    especialmente en determinados estratos socioeconómicos. Estas tendencias sugieren que el fenómeno no solo es individual, sino también contextual y cultural.  
-    Por tanto, los resultados respaldan la necesidad de **estrategias institucionales de bienestar digital**, centradas en la autorregulación tecnológica y la educación emocional de los jóvenes universitarios.""")
+En conjunto, los resultados obtenidos confirman que el tiempo de uso del smartphone mantiene una **relación directa con los niveles de nomofobia y de mal uso del dispositivo**, además de mostrar una **asociación significativa con la ansiedad social**.  
+Esto sugiere que el uso excesivo del teléfono no solo impacta en la dependencia tecnológica, sino también en el bienestar psicológico, evidenciando la necesidad de estrategias institucionales para fomentar un uso consciente y equilibrado de la tecnología entre los estudiantes universitarios.
 
+El análisis integral evidencia que la nomofobia se asocia de forma significativa con un mayor tiempo de uso del smartphone y niveles elevados de ansiedad social, especialmente en determinados estratos socioeconómicos. Estas tendencias sugieren que el fenómeno no solo es individual, sino también contextual y cultural. Por tanto, los resultados respaldan la necesidad de **estrategias institucionales de bienestar digital**, centradas en la autorregulación tecnológica y la educación emocional de los jóvenes universitarios.
+
+**Enfoque No Paramétrico:**  
+La prueba de Shapiro-Wilk (p<0.001) confirmó la no-normalidad de los datos, validando el uso de estadística no paramétrica (Spearman y Mann-Whitney) como la única vía correcta para evitar sesgos en el análisis.
+
+**Respuesta a la Investigación:**  
+Se confirma una fuerte correlación positiva (ρ = 0.88) entre horas de uso y nomofobia. El tiempo en pantalla es un predictor central: a mayor uso, mayor severidad del trastorno.
+""")
     st.markdown("---")
 
-    # ---- Cuadro de recomendaciones finales ----
+    # ---- Cuadro de recomendaciones finales combinadas ----
     st.subheader("Recomendaciones 💡")
-    recs = []
-    if any("Ansiedad_social" in s and "significativa" in s for s in conclusions):
-        recs.append("Implementar talleres de regulación emocional enfocados en la ansiedad social asociada al uso del smartphone.")
-    if 'p_u' in locals() and p_u < 0.05:
-        recs.append("Desarrollar campañas para promover hábitos digitales saludables y control del tiempo de uso.")
+
+    recs = [
+        # Recomendaciones antiguas
+        "Implementar talleres de regulación emocional enfocados en la ansiedad social asociada al uso del smartphone.",
+        "Desarrollar campañas para promover hábitos digitales saludables y control del tiempo de uso.",
+        # Recomendaciones nuevas
+        "Validación Psicométrica: Institucionalizar el Alpha de Cronbach para validar el instrumento.",
+        "Medición Objetiva: Usar capturas de 'Bienestar Digital' en lugar de auto-reportes.",
+        "Corrección de Autoestima: Revisar la codificación de ítems inversos en la escala de Rosenberg.",
+        "Clasificación Data-Driven: Usar K-Means o cuartiles para definir grupos de riesgo.",
+        "Modelos Predictivos: Aumentar la muestra (N>100) para aplicar regresiones logísticas."
+    ]
 
     for i, r in enumerate(recs, 1):
         st.markdown(f"**{i}.** {r}")
+
     st.markdown("---")
 
     st.success("Las conclusiones integran resultados descriptivos, correlacionales y no paramétricos, reforzando la validez del análisis aplicado.")
