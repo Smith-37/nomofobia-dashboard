@@ -1,3 +1,4 @@
+# Dasboard Nomofobia y Dependencia al Smartphone
 
 import streamlit as st
 import pandas as pd
@@ -25,8 +26,7 @@ PALETTE_INST = ["#0F4C81", "#F4A300", "#7BAFD4", "#D97B0E", "#4C6A92"]
 st.set_page_config(
     page_title="Análisis de Nomofobia y Dependencia al Smartphone",
     layout="wide",
-    initial_sidebar_state="expanded"
-)
+    initial_sidebar_state="expanded")
 
 # --- Bloque visual: animación + tarjetas elegantes + header con fade-in ---
 st.markdown("""
@@ -278,6 +278,53 @@ with tabs[0]:
         """
     )
 
+    # === KPIs DINÁMICOS ===
+    st.markdown("### 📊 Indicadores Clave del Estudio")
+
+    df_kpi = df_f.copy()
+
+    # Cálculo de métricas principales
+    rho, p_rho = (np.nan, np.nan)
+    if {"Horas_Uso", "Nomofobia"}.issubset(df_kpi.columns):
+        rho, p_rho = stats.spearmanr(df_kpi["Horas_Uso"], df_kpi["Nomofobia"], nan_policy="omit")
+
+    p_mw = np.nan
+    if {"Nomofobia?", "Horas_Uso"}.issubset(df_kpi.columns):
+        a = df_kpi[df_kpi["Nomofobia?"] == "Sí"]["Horas_Uso"].dropna()
+        b = df_kpi[df_kpi["Nomofobia?"] == "No"]["Horas_Uso"].dropna()
+        if len(a) >= 3 and len(b) >= 3:
+            _, p_mw = stats.mannwhitneyu(a, b, alternative="two-sided")
+
+    p_kw = np.nan
+    if {"Estrato", "Nomofobia"}.issubset(df_kpi.columns):
+        groups = [g["Nomofobia"].dropna() for _, g in df_kpi.groupby("Estrato")]
+        if len(groups) > 1:
+            _, p_kw = stats.kruskal(*groups)
+
+    # Etiquetas más interpretativas
+    def format_p(p):
+        if np.isnan(p):
+            return "NA"
+        elif p < 0.001:
+            return "p < 0.001"
+        elif p < 0.01:
+            return "p < 0.01"
+        elif p < 0.05:
+            return "p < 0.05"
+        else:
+            return "ns (≥0.05)"
+
+    # Mostrar KPIs
+    col1, col2, col3 = st.columns(3)
+    col1.metric("📈 Asociación Horas–Nomofobia (ρ)", f"{rho:.2f}" if not np.isnan(rho) else "NA",
+                "Alta" if rho >= 0.6 else ("Moderada" if rho >= 0.3 else "Baja"))
+    col2.metric("⚖️ Mann–Whitney", format_p(p_mw),
+                "Diferencia significativa" if (not np.isnan(p_mw) and p_mw < 0.05) else "No significativa")
+    col3.metric("📊 Kruskal–Wallis", format_p(p_kw),
+                "Diferencias entre estratos" if (not np.isnan(p_kw) and p_kw < 0.05) else "Sin diferencias")
+
+    st.caption("Estos indicadores resumen las asociaciones y diferencias clave del estudio.")
+
     st.markdown("### 🎯 **Objetivos del estudio**")
     st.write(
         """
@@ -291,12 +338,12 @@ with tabs[0]:
 
     st.markdown("---")
 
-    # --- Resumen descriptivo ---
+    # === Resumen descriptivo ===
     st.subheader("Resumen descriptivo de las variables numéricas 📊")
-    numeric_cols = [c for c in ["Horas_Uso", "Nomofobia", "Ansiedad_social", "Autoestima", "Mal_uso"] if c in df_f.columns]
+    numeric_cols = [c for c in ["Horas_Uso", "Nomofobia", "Ansiedad_social", "Autoestima", "Mal_uso"] if c in df_kpi.columns]
 
     if numeric_cols:
-        desc = df_f[numeric_cols].describe().T.rename(columns={"50%": "mediana"})
+        desc = df_kpi[numeric_cols].describe().T.rename(columns={"50%": "mediana"})
         st.dataframe(desc.style.format("{:.2f}"), use_container_width=True)
         st.caption("Tabla 1. Estadísticos descriptivos básicos de las principales variables de estudio.")
     else:
@@ -304,7 +351,7 @@ with tabs[0]:
 
     st.markdown("---")
 
-    # --- Función de pruebas de normalidad ---
+    # === Pruebas de normalidad ===
     def run_normality(series):
         from scipy.stats import shapiro, anderson
         s = series.dropna()
@@ -317,13 +364,12 @@ with tabs[0]:
         except Exception:
             return np.nan, np.nan
 
-    # --- Pruebas de normalidad ---
     if numeric_cols:
         st.subheader("Pruebas de normalidad (Shapiro–Wilk y Anderson–Darling) 🧮")
 
         results = []
         for col in numeric_cols:
-            p_sh, ad_stat = run_normality(df_f[col])
+            p_sh, ad_stat = run_normality(df_kpi[col])
             normal = "✅ Normal" if p_sh >= 0.05 else "⚠️ No normal"
             results.append({
                 "Variable": col,
@@ -347,18 +393,15 @@ with tabs[0]:
         )
         st.caption("Tabla 2. Resultados de las pruebas de normalidad por variable.")
 
-        # Interpretación contextualizada según el proyecto
         st.markdown(
             """
             **Interpretación:**  
-            Las pruebas de normalidad permiten verificar si las variables cuantitativas presentan una 
-            distribución normal. En este caso, los valores obtenidos indican que la mayoría de las variables 
-            **no siguen una distribución normal**, lo que justifica el uso de técnicas estadísticas no paramétricas.  
-            Esto concuerda con lo reportado en el informe del proyecto, donde se evidenció una alta asimetría 
-            y presencia de valores atípicos en las variables de nomofobia y horas de uso del smartphone.  
+            Los resultados confirman que las variables cuantitativas analizadas **no siguen una distribución normal**, 
+            respaldando la decisión metodológica del uso de pruebas no paramétricas.  
+            Este patrón concuerda con el informe del proyecto, donde se observaron asimetrías significativas en los 
+            niveles de nomofobia y en las horas de uso del smartphone.  
             
-            👉 En la siguiente sección se presentan las visualizaciones descriptivas que permiten observar 
-            de manera gráfica estos comportamientos.
+            👉 En la siguiente pestaña se presentan las visualizaciones descriptivas que permiten observar gráficamente estos comportamientos.
             """
         )
     else:
@@ -368,7 +411,7 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("📊 Visualizaciones descriptivas")
 
-    # --- Definición global de paleta institucional (azul–ocre) ---
+    # --- Definición global de paleta (azul–ocre) ---
     palette_institucional = ["#0F4C81", "#F4A300", "#7BAFD4", "#D97B0E", "#4C6A92"]
 
     numeric_cols = [c for c in ["Horas_Uso", "Nomofobia", "Ansiedad_social", "Autoestima", "Mal_uso"] if c in df_f.columns]
@@ -385,7 +428,7 @@ with tabs[1]:
                 # --- Fila 1: Histograma + QQplot ---
                 row1_col1, row1_col2 = st.columns([1, 1])
 
-                # HISTOGRAMA (colores institucionales + hover)
+                # HISTOGRAMA
                 with row1_col1:
                     fig_hist = px.histogram(
                         df_f,
@@ -407,7 +450,7 @@ with tabs[1]:
                     )
                     st.plotly_chart(fig_hist, use_container_width=True)
 
-                # QQPLOT (azul claro y vinotinto sobre fondo oscuro)
+                # QQPLOT
                 with row1_col2:
                     figm, ax = plt.subplots(figsize=(5, 4))
                     clean = df_f[col].dropna()
@@ -503,7 +546,7 @@ with tabs[1]:
 with tabs[2]:
     st.subheader("🔗 Correlaciones no paramétricas — Spearman (Mapa de calor + Tabla con IC)")
 
-    # Paleta institucional: azul–ocre
+    # Paleta: azul–ocre
     palette_institucional = ["#0F4C81", "#F4A300", "#7BAFD4", "#D97B0E", "#4C6A92"]
 
     spearman_vars = [c for c in ["Horas_Uso", "Nomofobia", "Ansiedad_social", "Autoestima", "Mal_uso", "Edad"] if c in df_f.columns]
@@ -637,7 +680,7 @@ with tabs[3]:
 
             st.plotly_chart(fig_mw, use_container_width=True)
 
-            # --- Interpretación contextual (basada en el proyecto PDF) ---
+            # --- Interpretación contextual ---
             st.markdown("### **📖 Interpretación de resultados Mann–Whitney:**")
             st.write(
                 f"""
@@ -675,7 +718,7 @@ with tabs[4]:
             else:
                 st.info("ℹ️ No se evidencian diferencias significativas entre los estratos.")
 
-            # --- Paleta institucional (azul y ocre) ---
+            # --- Paleta (azul y ocre) ---
             palette_tomas = ["#0F4C81", "#E1B000", "#1C86EE", "#FFD166", "#073B4C"]
 
             # --- Boxplot interactivo con hover informativo ---
@@ -728,7 +771,7 @@ with tabs[4]:
 with tabs[5]:
     st.subheader("🔍 Análisis Post-Hoc: Dunn (Comparaciones por Pares — Bonferroni)")
 
-    # Paleta institucional: azul–ocre (definida aquí por seguridad)
+    # Paleta: azul–ocre
     palette_institucional = ["#0F4C81", "#F4A300", "#7BAFD4", "#D97B0E", "#4C6A92"]
 
     if {"Estrato", "Nomofobia"}.issubset(df_f.columns):
@@ -738,7 +781,7 @@ with tabs[5]:
         st.write("**Matriz de p-valores ajustados (Bonferroni):**")
         st.dataframe(dunn.style.format("{:.4f}"), use_container_width=True)
 
-        # --- Heatmap (usar paleta institucional como diverging con blanco en el medio) ---
+        # --- Heatmap ---
         # construimos un escala continua simple que va de azul -> blanco -> ocre
         color_scale = [palette_institucional[0], "#ffffff", palette_institucional[1]]
 
@@ -765,7 +808,7 @@ with tabs[5]:
 
         st.plotly_chart(fig_dunn, use_container_width=True, key="dunn_heatmap")
 
-        # --- Interpretación contextual (alineada al proyecto) ---
+        # --- Interpretación contextual ---
         st.markdown("### **📖 Interpretación del Post-Hoc Dunn (contexto del proyecto):**")
         st.write(
             "- Se aplicó **Dunn (p-ajustado Bonferroni)** tras Kruskal–Wallis para identificar qué pares de estratos\n"
@@ -1039,6 +1082,10 @@ with tabs[7]:
     Esto sugiere que el uso excesivo del teléfono no solo impacta en la dependencia tecnológica, sino también en el bienestar psicológico, 
     evidenciando la necesidad de estrategias institucionales para fomentar un uso consciente y equilibrado de la tecnología entre los estudiantes universitarios.
     """)
+    st.write("""
+    El análisis integral evidencia que **la nomofobia se asocia de forma significativa con un mayor tiempo de uso del smartphone y niveles elevados de ansiedad social**, 
+    especialmente en determinados estratos socioeconómicos. Estas tendencias sugieren que el fenómeno no solo es individual, sino también contextual y cultural.  
+    Por tanto, los resultados respaldan la necesidad de **estrategias institucionales de bienestar digital**, centradas en la autorregulación tecnológica y la educación emocional de los jóvenes universitarios.""")
 
     st.markdown("---")
 
@@ -1052,7 +1099,6 @@ with tabs[7]:
 
     for i, r in enumerate(recs, 1):
         st.markdown(f"**{i}.** {r}")
-
     st.markdown("---")
 
     st.success("Las conclusiones integran resultados descriptivos, correlacionales y no paramétricos, reforzando la validez del análisis aplicado.")
