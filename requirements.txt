@@ -1,10 +1,13 @@
 streamlit
 pandas
 numpy
-scipy
 plotly
-openpyxl
+scipy
 statsmodels
 scikit-posthocs
+matplotlib
+seaborn
+openpyxl
+
 
 
